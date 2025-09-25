@@ -1,0 +1,289 @@
+"use client";
+import React, { useState } from 'react';
+import { Calendar, ChevronLeft, ChevronRight, MapPin, DollarSign, User, Compass } from 'lucide-react';
+import { useRouter } from "next/navigation";
+
+const TripFormPage = () => {
+  const router = useRouter();
+  const [formData, setFormData] = useState({
+    nickname: '',
+    dateRange: { start: '', end: '' },
+    budget: '',
+    province: '',
+    travelStyle: []
+  });
+
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDates, setSelectedDates] = useState([]);
+  const [showCalendar, setShowCalendar] = useState(false);
+
+  const travelStyles = [
+    { id: 'beach', label: 'ทะเล', emoji: '🏖️' },
+    { id: 'mountain', label: 'ภูเขา', emoji: '⛰️' },
+    { id: 'temple', label: 'วัด', emoji: '🏛️' },
+    { id: 'cafe', label: 'คาเฟ่', emoji: '☕' },
+    { id: 'shopping', label: 'ช็อปปิ้ง', emoji: '🛍️' },
+    { id: 'nature', label: 'ธรรมชาติ', emoji: '🌿' },
+    { id: 'culture', label: 'วัฒนธรรม', emoji: '🎭' }
+  ];
+
+  const provinces = [
+    'กรุงเทพมหานคร', 'เชียงใหม่', 'เชียงราย', 'ภูเก็ต', 'กระบี่', 
+    'สุราษฎร์ธานี', 'ขอนแก่น', 'นครราชสีมา', 'อุบลราชธานี', 'หาดใหญ่'
+  ];
+
+  const getDaysInMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const renderCalendar = () => {
+    const daysInMonth = getDaysInMonth(currentMonth);
+    const firstDay = getFirstDayOfMonth(currentMonth);
+    const days = [];
+    
+    // Empty cells for days before the first day of the month
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<div key={`empty-${i}`} className="h-8"></div>);
+    }
+    
+    // Days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isSelected = selectedDates.includes(dateStr);
+      
+      days.push(
+        <button
+          key={day}
+          onClick={() => toggleDate(dateStr)}
+          className={`h-8 w-8 text-sm rounded-full transition-colors ${
+            isSelected 
+              ? 'bg-purple-500 text-white' 
+              : 'hover:bg-purple-100 text-gray-700'
+          }`}
+        >
+          {day}
+        </button>
+      );
+    }
+    
+    return days;
+  };
+
+  const toggleDate = (dateStr) => {
+    setSelectedDates(prev => 
+      prev.includes(dateStr) 
+        ? prev.filter(d => d !== dateStr)
+        : [...prev, dateStr].sort()
+    );
+  };
+
+  const toggleTravelStyle = (styleId) => {
+    setFormData(prev => ({
+      ...prev,
+      travelStyle: prev.travelStyle.includes(styleId)
+        ? prev.travelStyle.filter(s => s !== styleId)
+        : [...prev.travelStyle, styleId]
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    // Handle form submission
+    console.log('Form submitted:', { ...formData, availableDates: selectedDates });
+  };
+
+  const monthNames = [
+    'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+    'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-purple-100">
+      {/* Navigation */}
+      
+
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+          {/* Header */}
+          <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6 text-center">
+            <h1 className="text-2xl font-bold mb-2">เข้าร่วมการวางแผนทริป</h1>
+            <p className="text-purple-100">กรอกข้อมูลของคุณเพื่อวางแผนทริปร่วมกัน</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Nickname */}
+            <div>
+              <label className="flex items-center space-x-2 text-gray-700 font-medium mb-3">
+                <User className="w-5 h-5 text-purple-600" />
+                <span>ชื่อเล่น</span>
+              </label>
+              <input
+                type="text"
+                value={formData.nickname}
+                onChange={(e) => setFormData(prev => ({ ...prev, nickname: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder="ใส่ชื่อเล่นของคุณ"
+                required
+              />
+            </div>
+
+            {/* Available Dates */}
+            <div>
+              <label className="flex items-center space-x-2 text-gray-700 font-medium mb-3">
+                <Calendar className="w-5 h-5 text-purple-600" />
+                <span>วันที่ว่าง</span>
+              </label>
+              
+              <div className="border border-gray-300 rounded-lg p-4">
+                {/* Calendar Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  
+                  <h3 className="font-semibold text-gray-800">
+                    {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                  </h3>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                    className="p-2 hover:bg-gray-100 rounded-lg"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="grid grid-cols-7 gap-1 mb-2">
+                  {['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(day => (
+                    <div key={day} className="h-8 flex items-center justify-center text-sm font-medium text-gray-500">
+                      {day}
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="grid grid-cols-7 gap-1">
+                  {renderCalendar()}
+                </div>
+
+                {selectedDates.length > 0 && (
+                  <div className="mt-4 p-3 bg-purple-50 rounded-lg">
+                    <p className="text-sm text-purple-700 mb-2">วันที่เลือก: {selectedDates.length} วัน</p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedDates.slice(0, 5).map(date => (
+                        <span key={date} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">
+                          {new Date(date).toLocaleDateString('th-TH')}
+                        </span>
+                      ))}
+                      {selectedDates.length > 5 && (
+                        <span className="text-purple-600 text-xs">และอีก {selectedDates.length - 5} วัน</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Budget */}
+            <div>
+              <label className="flex items-center space-x-2 text-gray-700 font-medium mb-3">
+                <DollarSign className="w-5 h-5 text-purple-600" />
+                <span>งบประมาณ</span>
+              </label>
+              <input
+                type="number"
+                value={formData.budget}
+                onChange={(e) => setFormData(prev => ({ ...prev, budget: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                placeholder="ระบุงบประมาณ (บาท)"
+                required
+              />
+            </div>
+
+            {/* Province */}
+            <div>
+              <label className="flex items-center space-x-2 text-gray-700 font-medium mb-3">
+                <MapPin className="w-5 h-5 text-purple-600" />
+                <span>จังหวัดที่อยากไป</span>
+              </label>
+              <select
+                value={formData.province}
+                onChange={(e) => setFormData(prev => ({ ...prev, province: e.target.value }))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                required
+              >
+                <option value="">เลือกจังหวัด</option>
+                {provinces.map(province => (
+                  <option key={province} value={province}>{province}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Travel Style */}
+            <div>
+              <label className="flex items-center space-x-2 text-gray-700 font-medium mb-3">
+                <Compass className="w-5 h-5 text-purple-600" />
+                <span>สไตล์การเที่ยว (เลือกได้หลายอย่าง)</span>
+              </label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {travelStyles.map(style => (
+                  <button
+                    key={style.id}
+                    type="button"
+                    onClick={() => toggleTravelStyle(style.id)}
+                    className={`p-4 border-2 rounded-lg text-center transition-all ${
+                      formData.travelStyle.includes(style.id)
+                        ? 'border-purple-500 bg-purple-50 text-purple-700'
+                        : 'border-gray-200 hover:border-purple-300 text-gray-700'
+                    }`}
+                  >
+                    <div className="text-2xl mb-2">{style.emoji}</div>
+                    <div className="text-sm font-medium">{style.label}</div>
+                  </button>
+                ))}
+              </div>
+              {formData.travelStyle.length > 0 && (
+                <p className="text-sm text-gray-600 mt-2">
+                  เลือกแล้ว: {formData.travelStyle.length} สไตล์
+                </p>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-6 border-t border-gray-200">
+              <button
+                type="submit"
+                disabled={!formData.nickname || !formData.budget || !formData.province || formData.travelStyle.length === 0 || selectedDates.length === 0}
+                className="w-full bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-4 px-6 rounded-lg text-lg font-semibold transition-colors duration-200"
+              >
+                บันทึกข้อมูล
+              </button>
+              {/* test */}
+              <button
+              onClick={() => router.push(`/TripSummaryPage`)}
+                className="mt-3 w-full bg-purple-500 hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-4 px-6 rounded-lg text-lg font-semibold transition-colors duration-200"
+              >
+                test go summary
+              </button>
+              <p className="text-center text-sm text-gray-500 mt-3">
+                ข้อมูลของคุณจะถูกใช้เพื่อวางแผนทริปร่วมกัน
+              </p>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default TripFormPage;
