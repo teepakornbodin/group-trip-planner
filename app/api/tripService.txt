@@ -1,0 +1,885 @@
+// api/tripService.ts
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Types
+export interface Trip {
+  id: string;
+  trip_code: string;
+  title?: string;
+  status: 'collecting_responses' | 'ai_processing' | 'voting' | 'completed' | 'archived';
+  created_at: string;
+  expires_at: string;
+  max_participants: number;
+  ai_processing_complete: boolean;
+  voting_complete: boolean;
+  plan_generated: boolean;
+}
+
+export interface TripParticipant {
+  id: string;
+  trip_id: string;
+  nickname: string;
+  available_dates: string[];
+  budget: number;
+  preferred_province: string;
+  travel_styles: string[];
+  additional_notes?: string;
+  created_at: string;
+}
+
+export interface AIRecommendation {
+  id: string;
+  trip_id: string;
+  name: string;
+  type: 'attraction' | 'accommodation' | 'restaurant' | 'activity' | 'shopping' | 'cafe';
+  description: string;
+  location: string;
+  estimated_cost: number;
+  duration: string;
+  rating: number;
+  category: string;
+  pros: string[];
+  cons: string[];
+  additional_info: any;
+  ai_confidence: number;
+}
+
+export interface Vote {
+  id: string;
+  trip_id: string;
+  recommendation_id: string;
+  participant_nickname: string;
+  vote_type: 'up' | 'down';
+}
+
+export interface TripPlan {
+  id: string;
+  trip_id: string;
+  plan_title: string;
+  start_date: string;
+  end_date: string;
+  total_budget: number;
+  itinerary: any;
+  budget_breakdown: any;
+  travel_tips: string[];
+  overview: any;
+}
+
+// API Functions
+
+/**
+ * Create a new trip
+ */
+export async function createTrip(creatorIP?: string): Promise<{ data: Trip | null; error: string | null }> {
+  try {
+    // First generate a unique trip code
+    const { data: codeData, error: codeError } = await supabase
+      .rpc('generate_trip_code');
+
+    if (codeError) throw codeError;
+
+    const { data, error } = await supabase
+      .from('trips')
+      .insert([
+        {
+          trip_code: codeData,
+          creator_ip: creatorIP,
+          status: 'collecting_responses'
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Track analytics
+    await trackEvent(data.id, 'trip_created', { trip_code: data.trip_code });
+
+    return { data, error: null };
+  } catch (error: any) {
+    console.error('Error creating trip:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Get trip by code
+ */
+export async function getTripByCode(tripCode: string): Promise<{ data: Trip | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('trips')
+      .select('*')
+      .eq('trip_code', tripCode)
+      .single();
+
+    if (error) throw error;
+
+    // Check if trip is expired
+    if (new Date(data.expires_at) < new Date()) {
+      return { data: null, error: 'Trip has expired' };
+    }
+
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Add participant to trip
+ */
+export async function addParticipant(
+  tripCode: string,
+  participantData: Omit<TripParticipant, 'id' | 'trip_id' | 'created_at'>,
+  participantIP?: string
+): Promise<{ data: TripParticipant | null; error: string | null }> {
+  try {
+    // First get trip
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    // Check participant limit
+    const { count } = await supabase
+      .from('trip_participants')
+      .select('id', { count: 'exact' })
+      .eq('trip_id', trip.id);
+
+    if (count && count >= trip.max_participants) {
+      throw new Error('Trip has reached maximum participants');
+    }
+
+    // Add participant
+    const { data, error } = await supabase
+      .from('trip_participants')
+      .insert([
+        {
+          trip_id: trip.id,
+          ...participantData,
+          participant_ip: participantIP
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Track analytics
+    await trackEvent(trip.id, 'participant_added', { 
+      nickname: data.nickname,
+      province: data.preferred_province 
+    });
+
+    return { data, error: null };
+  } catch (error: any) {
+    console.error('Error adding participant:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Get trip summary with all participants and statistics
+ */
+export async function getTripSummary(tripCode: string): Promise<{ data: any | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .rpc('get_trip_summary', { trip_code_param: tripCode });
+
+    if (error) throw error;
+
+    // Track analytics
+    if (data && !data.error) {
+      await trackEvent(data.trip_info.id, 'summary_viewed', {});
+    }
+
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Generate AI recommendations using Gemini
+ */
+export async function generateAIRecommendations(tripCode: string): Promise<{ data: AIRecommendation[] | null; error: string | null }> {
+  try {
+    // Get trip summary first
+    const { data: summary, error: summaryError } = await getTripSummary(tripCode);
+    if (summaryError) throw new Error(summaryError);
+    if (!summary || summary.error) throw new Error('Trip not found');
+
+    // Update trip status to ai_processing
+    await supabase
+      .from('trips')
+      .update({ status: 'ai_processing' })
+      .eq('id', summary.trip_info.id);
+
+    // Call Gemini AI API
+    const aiRecommendations = await callGeminiAPI(summary);
+
+    // Save recommendations to database
+    const recommendationsToInsert = aiRecommendations.map(rec => ({
+      trip_id: summary.trip_info.id,
+      ...rec
+    }));
+
+    const { data, error } = await supabase
+      .from('ai_recommendations')
+      .insert(recommendationsToInsert)
+      .select();
+
+    if (error) throw error;
+
+    // Update trip status to voting
+    await supabase
+      .from('trips')
+      .update({ 
+        status: 'voting',
+        ai_processing_complete: true 
+      })
+      .eq('id', summary.trip_info.id);
+
+    // Track analytics
+    await trackEvent(summary.trip_info.id, 'ai_recommendations_generated', {
+      recommendation_count: data.length
+    });
+
+    return { data, error: null };
+  } catch (error: any) {
+    console.error('Error generating AI recommendations:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Get AI recommendations for a trip
+ */
+export async function getAIRecommendations(tripCode: string): Promise<{ data: AIRecommendation[] | null; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    const { data, error } = await supabase
+      .from('ai_recommendations')
+      .select('*')
+      .eq('trip_id', trip.id)
+      .order('ai_confidence', { ascending: false });
+
+    if (error) throw error;
+
+    return { data: data || [], error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Submit vote for recommendation
+ */
+export async function submitVote(
+  tripCode: string,
+  recommendationId: string,
+  participantNickname: string,
+  voteType: 'up' | 'down',
+  participantIP?: string
+): Promise<{ data: Vote | null; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    // Verify participant exists
+    const { data: participant } = await supabase
+      .from('trip_participants')
+      .select('id')
+      .eq('trip_id', trip.id)
+      .eq('nickname', participantNickname)
+      .single();
+
+    if (!participant) throw new Error('Participant not found');
+
+    // Insert or update vote
+    const { data, error } = await supabase
+      .from('recommendation_votes')
+      .upsert([
+        {
+          trip_id: trip.id,
+          recommendation_id: recommendationId,
+          participant_nickname: participantNickname,
+          vote_type: voteType,
+          participant_ip: participantIP
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Track analytics
+    await trackEvent(trip.id, 'vote_submitted', { 
+      recommendation_id: recommendationId,
+      vote_type: voteType 
+    });
+
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Get votes for trip recommendations
+ */
+export async function getVotes(tripCode: string): Promise<{ data: Vote[] | null; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    const { data, error } = await supabase
+      .from('recommendation_votes')
+      .select('*')
+      .eq('trip_id', trip.id);
+
+    if (error) throw error;
+
+    return { data: data || [], error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Generate final trip plan
+ */
+export async function generateTripPlan(tripCode: string): Promise<{ data: TripPlan | null; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    // Get trip summary and votes
+    const { data: summary } = await getTripSummary(tripCode);
+    const { data: votes } = await getVotes(tripCode);
+    const { data: recommendations } = await getAIRecommendations(tripCode);
+
+    if (!summary || !votes || !recommendations) {
+      throw new Error('Missing data for plan generation');
+    }
+
+    // Generate plan using AI
+    const plan = await generatePlanWithGemini(summary, recommendations, votes);
+
+    // Save plan to database
+    const { data, error } = await supabase
+      .from('trip_plans')
+      .insert([
+        {
+          trip_id: trip.id,
+          ...plan
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Update trip status to completed
+    await supabase
+      .from('trips')
+      .update({ 
+        status: 'completed',
+        voting_complete: true,
+        plan_generated: true 
+      })
+      .eq('id', trip.id);
+
+    // Track analytics
+    await trackEvent(trip.id, 'trip_plan_generated', {
+      plan_id: data.id
+    });
+
+    return { data, error: null };
+  } catch (error: any) {
+    console.error('Error generating trip plan:', error);
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Get final trip plan
+ */
+export async function getTripPlan(tripCode: string): Promise<{ data: TripPlan | null; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    const { data, error } = await supabase
+      .from('trip_plans')
+      .select('*')
+      .eq('trip_id', trip.id)
+      .single();
+
+    if (error) throw error;
+
+    return { data, error: null };
+  } catch (error: any) {
+    return { data: null, error: error.message };
+  }
+}
+
+/**
+ * Delete trip data after PDF download
+ */
+export async function deleteTripData(tripCode: string): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const { data: trip, error: tripError } = await getTripByCode(tripCode);
+    if (tripError) throw new Error(tripError);
+    if (!trip) throw new Error('Trip not found');
+
+    // Track final analytics
+    await trackEvent(trip.id, 'trip_data_deleted', {});
+
+    // Delete trip (cascade will delete all related data)
+    const { error } = await supabase
+      .from('trips')
+      .delete()
+      .eq('id', trip.id);
+
+    if (error) throw error;
+
+    return { success: true, error: null };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Track analytics event
+ */
+async function trackEvent(tripId: string, eventType: string, eventData: any, ipAddress?: string): Promise<void> {
+  try {
+    await supabase
+      .from('trip_analytics')
+      .insert([
+        {
+          trip_id: tripId,
+          event_type: eventType,
+          event_data: eventData,
+          ip_address: ipAddress
+        }
+      ]);
+  } catch (error) {
+    console.warn('Failed to track analytics:', error);
+  }
+}
+
+/**
+ * Call Gemini AI API for recommendations
+ */
+async function callGeminiAPI(tripSummary: any): Promise<Partial<AIRecommendation>[]> {
+  try {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) throw new Error('Gemini API key not configured');
+
+    const prompt = buildRecommendationPrompt(tripSummary);
+
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + geminiApiKey, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Gemini API request failed');
+    }
+
+    const data = await response.json();
+    const aiResponse = data.candidates[0].content.parts[0].text;
+
+    // Parse AI response and format as recommendations
+    return parseAIRecommendations(aiResponse);
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    // Fallback to mock recommendations if AI fails
+    return getMockRecommendations(tripSummary);
+  }
+}
+
+/**
+ * Build prompt for AI recommendations
+ */
+function buildRecommendationPrompt(summary: any): string {
+  const participants = summary.participants.details || [];
+  const budgetStats = summary.budget_stats || {};
+  const popularProvinces = summary.popular_provinces || [];
+  const popularStyles = summary.popular_travel_styles || [];
+
+  return `
+As a travel planning AI, create recommendations for a group trip to Thailand with the following details:
+
+**Group Information:**
+- Number of participants: ${summary.participants.total}
+- Average budget: ${budgetStats.average} THB per person
+- Budget range: ${budgetStats.min} - ${budgetStats.max} THB
+- Popular destinations: ${popularProvinces.map((p: any) => p.province).join(', ')}
+- Popular travel styles: ${popularStyles.map((s: any) => s.style).join(', ')}
+- Common available dates: ${JSON.stringify(summary.common_dates)}
+
+**Individual Preferences:**
+${participants.map((p: any) => 
+  `- ${p.nickname}: Budget ${p.budget} THB, prefers ${p.province}, likes ${p.travel_styles.join(', ')}`
+).join('\n')}
+
+Please provide 6-8 recommendations in the following JSON format:
+{
+  "recommendations": [
+    {
+      "name": "Recommendation Name",
+      "type": "attraction|accommodation|restaurant|activity|shopping|cafe",
+      "description": "Detailed description",
+      "location": "City/Province",
+      "estimated_cost": 500,
+      "duration": "2-3 hours",
+      "rating": 4.5,
+      "category": "temple|beach|mountain|cafe|shopping|nature|culture",
+      "pros": ["Pro 1", "Pro 2", "Pro 3"],
+      "cons": ["Con 1", "Con 2"],
+      "ai_confidence": 0.85
+    }
+  ]
+}
+
+Focus on recommendations that match the group's budget, preferences, and travel styles. Include a mix of attractions, accommodation, restaurants, and activities.
+`;
+}
+
+/**
+ * Parse AI recommendations from response
+ */
+function parseAIRecommendations(aiResponse: string): Partial<AIRecommendation>[] {
+  try {
+    // Try to extract JSON from AI response
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return parsed.recommendations || [];
+    }
+    throw new Error('No valid JSON found in AI response');
+  } catch (error) {
+    console.error('Error parsing AI recommendations:', error);
+    return [];
+  }
+}
+
+/**
+ * Generate trip plan with Gemini AI
+ */
+async function generatePlanWithGemini(summary: any, recommendations: AIRecommendation[], votes: Vote[]): Promise<Partial<TripPlan>> {
+  try {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) throw new Error('Gemini API key not configured');
+
+    // Calculate vote results
+    const voteResults = calculateVoteResults(recommendations, votes);
+    const topRecommendations = voteResults.filter(r => r.score > 0).slice(0, 8);
+
+    const prompt = buildPlanPrompt(summary, topRecommendations);
+
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + geminiApiKey, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('Gemini API request failed');
+    }
+
+    const data = await response.json();
+    const aiResponse = data.candidates[0].content.parts[0].text;
+
+    // Parse AI response and format as trip plan
+    return parseAITripPlan(aiResponse, summary);
+  } catch (error) {
+    console.error('Error generating plan with Gemini:', error);
+    // Fallback to mock plan if AI fails
+    return getMockTripPlan(summary, recommendations, votes);
+  }
+}
+
+/**
+ * Calculate vote results for recommendations
+ */
+function calculateVoteResults(recommendations: AIRecommendation[], votes: Vote[]) {
+  return recommendations.map(rec => {
+    const recVotes = votes.filter(v => v.recommendation_id === rec.id);
+    const upvotes = recVotes.filter(v => v.vote_type === 'up').length;
+    const downvotes = recVotes.filter(v => v.vote_type === 'down').length;
+    const score = upvotes - downvotes;
+    
+    return {
+      ...rec,
+      upvotes,
+      downvotes,
+      score,
+      totalVotes: recVotes.length
+    };
+  }).sort((a, b) => b.score - a.score);
+}
+
+/**
+ * Build prompt for trip plan generation
+ */
+function buildPlanPrompt(summary: any, topRecommendations: any[]): string {
+  const commonDates = summary.common_dates || [];
+  const budgetStats = summary.budget_stats || {};
+  
+  return `
+Create a detailed day-by-day itinerary for a group trip to Thailand based on voting results:
+
+**Group Details:**
+- ${summary.participants.total} participants
+- Budget: ${budgetStats.average} THB per person (total: ${budgetStats.average * summary.participants.total} THB)
+- Available dates: ${commonDates.join(', ')}
+- Trip duration: ${commonDates.length} days
+
+**Selected Destinations (based on voting):**
+${topRecommendations.map(rec => 
+  `- ${rec.name} (${rec.type}): ${rec.upvotes} votes, Cost: ${rec.estimated_cost} THB, Duration: ${rec.duration}`
+).join('\n')}
+
+Please create a comprehensive trip plan in this JSON format:
+{
+  "plan_title": "Trip Title",
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD", 
+  "total_budget": 15000,
+  "overview": {
+    "destinations": ["Place 1", "Place 2"],
+    "accommodation": "Hotel Name",
+    "transportation": "Method",
+    "total_distance": "XXX km"
+  },
+  "itinerary": [
+    {
+      "day": 1,
+      "date": "YYYY-MM-DD",
+      "activities": [
+        {
+          "time": "09:00",
+          "type": "travel|meal|attraction|checkin|checkout|shopping",
+          "title": "Activity Title",
+          "description": "Detailed description",
+          "duration": "2 hours",
+          "cost": 500,
+          "icon": "🏛️"
+        }
+      ]
+    }
+  ],
+  "budget_breakdown": {
+    "accommodation": 2500,
+    "transportation": 3000,
+    "meals": 2000,
+    "attractions": 1500,
+    "shopping": 2000,
+    "miscellaneous": 1000
+  },
+  "travel_tips": [
+    "Tip 1",
+    "Tip 2",
+    "Tip 3"
+  ]
+}
+
+Make sure to:
+1. Include all highly-voted recommendations
+2. Create realistic timing and logistics
+3. Stay within budget constraints
+4. Include meals, transportation, and accommodation
+5. Provide practical travel tips
+6. Use appropriate Thai locations and activities
+`;
+}
+
+/**
+ * Parse AI trip plan response
+ */
+function parseAITripPlan(aiResponse: string, summary: any): Partial<TripPlan> {
+  try {
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        plan_title: parsed.plan_title,
+        start_date: parsed.start_date,
+        end_date: parsed.end_date,
+        total_budget: parsed.total_budget,
+        itinerary: parsed.itinerary,
+        budget_breakdown: parsed.budget_breakdown,
+        travel_tips: parsed.travel_tips,
+        overview: parsed.overview
+      };
+    }
+    throw new Error('No valid JSON found in AI plan response');
+  } catch (error) {
+    console.error('Error parsing AI trip plan:', error);
+    return getMockTripPlan(summary);
+  }
+}
+
+/**
+ * Fallback mock recommendations
+ */
+function getMockRecommendations(tripSummary: any): Partial<AIRecommendation>[] {
+  return [
+    {
+      name: "วัดพระธาตุดอยสุเทพ",
+      type: "attraction",
+      description: "วัดที่มีชื่อเสียงบนดอยสุเทพ เชียงใหม่ มีวิวเมืองที่สวยงาม",
+      location: "เชียงใหม่",
+      estimated_cost: 50,
+      duration: "2-3 ชั่วโมง",
+      rating: 4.8,
+      category: "temple",
+      pros: ["วิวสวยงาม", "ใกล้เมือง", "สถานที่ศักดิ์สิทธิ์"],
+      cons: ["ขึ้นเขาชัน", "นักท่องเที่ยวเยอะ"],
+      ai_confidence: 0.9
+    },
+    {
+      name: "ตลาดเจ้าพระยา",
+      type: "shopping",
+      description: "ตลาดท้องถิ่นที่มีของกินและของที่ระลึกมากมาย",
+      location: "เชียงใหม่", 
+      estimated_cost: 300,
+      duration: "1-2 ชั่วโมง",
+      rating: 4.5,
+      category: "shopping",
+      pros: ["ของถูก", "ของกินเยอะ", "บรรยากาศดี"],
+      cons: ["แออัด", "ร้อน"],
+      ai_confidence: 0.85
+    },
+    {
+      name: "คาเฟ่ดอยช้าง",
+      type: "cafe",
+      description: "คาเฟ่บนดอยที่มีวิวสวยงาม เหมาะสำหรับการพักผ่อน",
+      location: "เชียงใหม่",
+      estimated_cost: 200,
+      duration: "1-2 ชั่วโมง", 
+      rating: 4.6,
+      category: "cafe",
+      pros: ["วิวสวย", "อาหารอร่อย", "บรรยากาศดี"],
+      cons: ["ราคาแพง", "ไกลจากเมือง"],
+      ai_confidence: 0.8
+    },
+    {
+      name: "รีสอร์ท ดอยคำ",
+      type: "accommodation",
+      description: "รีสอร์ทบนดอยที่มีวิวภูเขาสวยงาม",
+      location: "เชียงใหม่",
+      estimated_cost: 2500,
+      duration: "ค้างคืน",
+      rating: 4.4,
+      category: "accommodation",
+      pros: ["วิวสวย", "สะอาด", "เงียบสงบ"],
+      cons: ["ไกลจากเมือง", "ราคาแพง"],
+      ai_confidence: 0.75
+    }
+  ];
+}
+
+/**
+ * Fallback mock trip plan
+ */
+function getMockTripPlan(summary: any, recommendations?: any[], votes?: any[]): Partial<TripPlan> {
+  const commonDates = summary.common_dates || ["2024-03-17", "2024-03-18", "2024-03-19"];
+  const startDate = commonDates[0];
+  const endDate = commonDates[commonDates.length - 1];
+
+  return {
+    plan_title: "แผนการเดินทางเชียงใหม่ 3 วัน 2 คืน",
+    start_date: startDate,
+    end_date: endDate,
+    total_budget: summary.budget_stats?.average || 15000,
+    overview: {
+      destinations: ["วัดพระธาตุดอยสุเทพ", "ตลาดเจ้าพระยา", "คาเฟ่ดอยช้าง"],
+      accommodation: "รีสอร์ท ดอยคำ",
+      transportation: "รถเช่า",
+      total_distance: "120 กม."
+    },
+    itinerary: [
+      {
+        day: 1,
+        date: startDate,
+        activities: [
+          {
+            time: "08:00",
+            type: "travel",
+            title: "เดินทางจากกรุงเทพ",
+            description: "บินไปเชียงใหม่",
+            duration: "1.5 ชั่วโมง",
+            cost: 3000,
+            icon: "✈️"
+          },
+          {
+            time: "11:00",
+            type: "checkin", 
+            title: "เช็คอินที่พัก",
+            description: "รีสอร์ท ดอยคำ - พักผ่อนและเตรียมตัว",
+            duration: "1 ชั่วโมง",
+            cost: 2500,
+            icon: "🏨"
+          },
+          {
+            time: "15:00",
+            type: "attraction",
+            title: "วัดพระธาตุดอยสุเทพ", 
+            description: "เที่ยวชมวัดและชมวิวเมืองเชียงใหม่",
+            duration: "3 ชั่วโมง",
+            cost: 50,
+            icon: "🏛️"
+          }
+        ]
+      }
+    ],
+    budget_breakdown: {
+      accommodation: 2500,
+      transportation: 6000,
+      meals: 1800,
+      attractions: 650,
+      shopping: 2300,
+      miscellaneous: 1750
+    },
+    travel_tips: [
+      "จองตั๋วเครื่องบินล่วงหน้าเพื่อราคาดี",
+      "เตรียมเสื้อแจ็คเก็ตสำหรับอากาศเย็นบนดอย",
+      "เช็คสภาพอากาศก่อนเดินทาง",
+      "เตรียมเงินสดสำหรับตลาดท้องถิ่น"
+    ]
+  };
+}
