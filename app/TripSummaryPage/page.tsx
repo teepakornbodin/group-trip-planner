@@ -176,7 +176,7 @@ const TripSummaryPage = () => {
                 >
                   <div className="flex items-center space-x-3">
                     <Users className="w-5 h-5 text-purple-600" />
-                    <span className="font-medium">ผู้เข้าร่วม ({totalParticipants} คน)</span>
+                    <span className="font-medium text-purple-500">ผู้เข้าร่วม ({totalParticipants} คน)</span>
                   </div>
                   {expandedSections.participants ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
@@ -214,7 +214,7 @@ const TripSummaryPage = () => {
                 >
                   <div className="flex items-center space-x-3">
                     <Calendar className="w-5 h-5 text-blue-600" />
-                    <span className="font-medium">วันที่ตรงกัน ({commonDates.length} วัน)</span>
+                    <span className="font-medium text-purple-500">วันที่ตรงกัน ({commonDates.length} วัน)</span>
                   </div>
                   {expandedSections.dates ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
@@ -240,7 +240,7 @@ const TripSummaryPage = () => {
                 >
                   <div className="flex items-center space-x-3">
                     <Compass className="w-5 h-5 text-green-600" />
-                    <span className="font-medium">สไตล์การเที่ยว</span>
+                    <span className="font-medium text-purple-500">สไตล์การเที่ยว</span>
                   </div>
                   {expandedSections.styles ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                 </button>
