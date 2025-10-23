@@ -193,7 +193,7 @@ const TripSummaryPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-purple-100">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm">
+      <nav className="">
         <div className="max-w-4xl mx-auto px-4 py-3">
           <button
             onClick={() => router.back()}
