@@ -60,8 +60,8 @@ const TripSummaryPage = () => {
     alert('กำลังดาวน์โหลด PDF...');
   };
 
-  const handleAIRecommendation = () => {
-    router.push(`/AIRecommendationPage/${tripCode}`);
+  const handleRecommendation = () => {
+    router.push(`/RecommendationPage/${tripCode}`);
   };
 
   // Travel style mapping
@@ -271,7 +271,7 @@ const TripSummaryPage = () => {
         {/* Tabs */}
         <div className="bg-white rounded-t-2xl shadow-xl overflow-hidden">
           <div className="flex">
-            {['สรุป', 'AI', 'Plan'].map((tab) => (
+            {['สรุป', 'โหวต', 'Plan'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -448,7 +448,7 @@ const TripSummaryPage = () => {
                   </button>
                   
                   <button
-                    onClick={handleAIRecommendation}
+                    onClick={handleRecommendation}
                     className="flex items-center justify-center space-x-2 bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1"
                   >
                     <Bot className="w-5 h-5" />
@@ -459,18 +459,18 @@ const TripSummaryPage = () => {
             </div>
           )}
 
-          {activeTab === 'AI' && (
+          {activeTab === 'โหวต' && (
             <div className="text-center py-12">
               <Bot className="w-16 h-16 text-purple-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">AI กำลังเตรียมคำแนะนำ</h2>
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">โหวตสถานที่</h2>
               <p className="text-gray-600 mb-6">
-                ตัวช่วย AI จะวิเคราะห์ข้อมูลของทุกคนและแนะนำสถานที่ท่องเที่ยวที่เหมาะสม
+                โหวตสถานที่จากที่นี่เพื่อให้ได้สถานที่ที่เหมาะสมกับทุกคน
               </p>
               <button
-                onClick={handleAIRecommendation}
+                onClick={handleRecommendation}
                 className="bg-purple-500 hover:bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold transition-colors"
               >
-                เริ่มการแนะนำ
+                เริ่มการโหวต
               </button>
             </div>
           )}

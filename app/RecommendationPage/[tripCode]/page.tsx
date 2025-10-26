@@ -129,10 +129,10 @@ const AIRecommendationPage = () => {
       <div className="bg-white rounded-t-2xl shadow-xl p-6">
         <div className="flex items-center space-x-3 mb-4">
           <Bot className="w-8 h-8 text-purple-600" />
-          <h1 className="text-2xl font-bold text-gray-800">คำแนะนำจาก AI</h1>
+          <h1 className="text-2xl font-bold text-gray-800">คำแนะนำจากที่เลือก</h1>
         </div>
         <p className="text-gray-600 mb-4">
-          AI ได้วิเคราะห์ข้อมูลของทุกคนแล้ว กรุณาโหวตเพื่อเลือกสถานที่ที่คุณชอบ
+          วิเคราะห์ข้อมูลของทุกคนแล้ว กรุณาโหวตเพื่อเลือกสถานที่ที่คุณชอบ
         </p>
         <div className="bg-purple-50 p-4 rounded-lg">
           <p className="text-sm text-purple-700">
