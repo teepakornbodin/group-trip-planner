@@ -1,85 +1,105 @@
 "use client";
 
-import React from "react";
-import { usePathname } from "next/navigation";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+
+interface UserProfile {
+  email?: string;
+  username?: string;
+  avatar_url?: string;
+}
 
 const NavBar = () => {
   const pathname = usePathname();
-  return (
-    <nav className="bg-white px-4 py-3 z-50 drop-shadow-sm drop-shadow-grey-200/20">
-      <div className="max-w-6xl mx-auto flex justify-between items-center">
-        {/* ส่วนที่อยู่ชิดซ้าย: โลโก้และชื่อแอป */}
-        <div className="flex items-center space-x-2">
-          <Link href={"/"} className="flex items-center space-x-2">
-            <img
-              src="/logo_icon.png"
-              alt="Logo"
-              className="h-8 w-8 bg-purple-500 rounded-lg"
-            />
-            <span className="font-semibold text-gray-800">
-              Group Trip Planner
-            </span>
-          </Link>
-        </div>
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
 
-        {/* ส่วนที่อยู่ชิดขวา: ลิงก์และปุ่ม Login */}
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        // fetch profile from profiles table
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username, avatar_url")
+          .eq("id", session.user.id)
+          .single();
+
+        setUser({
+          email: session.user.email || undefined,
+          username: profile?.username || "User",
+          avatar_url: profile?.avatar_url || "/default-avatar.png",
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
+
+    fetchUser();
+
+    // listen to auth state changes
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      fetchUser();
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  return (
+    <nav className="bg-white px-4 py-3 shadow-sm">
+      <div className="max-w-6xl mx-auto flex justify-between items-center">
+        <Link href="/" className="flex items-center space-x-2">
+          <img src="/logo_icon.png" alt="Logo" className="h-8 w-8 bg-purple-500 rounded-lg" />
+          <span className="font-semibold text-gray-800">Group Trip Planner</span>
+        </Link>
+
         <div className="flex items-center space-x-4">
-          <Link
-            href="/"
-            className={`relative px-2 font-medium transition duration-300 ${
-              pathname === "/"
-                ? "text-white "
-                : "text-gray-600 hover:text-purple-500"
-            }`}
-          >
-            {pathname === "/" && (
-              <span className="absolute inset-0 -z-10 flex items-center justify-center">
-                <span className="px-8 py-4 rounded-full bg-purple-500"></span>
-              </span>
-            )}
-            Home
-          </Link>
-          <Link
-            href="/CreateTripPage"
-            className={`relative px-2 font-medium transition duration-300 ${
-              pathname === "/CreateTripPage"
-                ? "text-white "
-                : "text-gray-600 hover:text-purple-500"
-            }`}
-          >
-            {pathname === "/CreateTripPage" && (
-              <span className="absolute inset-0 -z-10 flex items-center justify-center">
-                <span className="px-14 py-4 rounded-full bg-purple-500"></span>
-              </span>
-            )}
-            Create Trip
-          </Link>
-          <Link
-            href="/MyTrip"
-            className={`relative px-2 font-medium transition duration-300 ${
-              pathname === "/MyTrip"
-                ? "text-white "
-                : "text-gray-600 hover:text-purple-500"
-            }`}
-          >
-            {pathname === "/MyTrip" && (
-              <span className="absolute inset-0 -z-10 flex items-center justify-center">
-                <span className="px-12 py-4 rounded-full bg-purple-500"></span>
-              </span>
-            )}
-            My Trips
-          </Link>
-          <Link href="/LoginPage">
-            <button className="ml-4 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition duration-300">
-              Login
-            </button>
-          </Link>
-          <Link href="/SignUpPage">
-            <button className=" px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition duration-300">
-              Sign Up
-            </button>
-          </Link>
+          <Link href="/" className={pathname === "/" ? "text-purple-500 font-bold" : "text-gray-600 hover:text-purple-500"}>หน้าแรก</Link>
+          <Link href="/CreateTripPage" className={pathname === "/CreateTripPage" ? "text-purple-500 font-bold" : "text-gray-600 hover:text-purple-500"}>สร้างทริป</Link>
+          <Link href="/MyTrip" className={pathname === "/MyTrip" ? "text-purple-500 font-bold" : "text-gray-600 hover:text-purple-500"}>ทริปของฉัน</Link>
+
+          {loading ? (
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gray-300 rounded-full animate-pulse" />
+              <span className="text-gray-400">กำลังโหลด...</span>
+            </div>
+          ) : !user ? (
+            <>
+              <Link href="/LoginPage">
+                <button className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600">เข้าสู่ระบบ</button>
+              </Link>
+              <Link href="/SignUpPage">
+                <button className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">สมัครสมาชิก</button>
+              </Link>
+            </>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <img
+                src={user.avatar_url || "/default-avatar.png"}
+                alt="Avatar"
+                className="w-8 h-8 rounded-full object-cover"
+              />
+              <span className="text-gray-700 font-medium">{user.username || user.email}</span>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                ออกจากระบบ
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </nav>
