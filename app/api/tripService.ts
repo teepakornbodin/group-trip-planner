@@ -53,9 +53,12 @@ export interface Vote {
   id: string;
   trip_id: string;
   recommendation_id: string;
-  participant_nickname: string;
+  participant_nickname: string | null;
   vote_type: 'up' | 'down';
+  voter_token?: string | null; // << เพิ่ม
 }
+
+
 
 export interface TripPlan {
   id: string;
@@ -283,38 +286,31 @@ export async function getAIRecommendations(tripCode: string): Promise<{ data: AI
 /**
  * Submit vote for recommendation
  */
+// แก้ฟังก์ชัน submitVote: ไม่ต้องตรวจ nickname แล้ว ใช้ voter_token แทน
+// เปลี่ยนซิกเนเจอร์: เพิ่ม voterToken?: string | null
 export async function submitVote(
   tripCode: string,
   recommendationId: string,
-  participantNickname: string,
+  participantNickname: string | null,
   voteType: 'up' | 'down',
-  participantIP?: string
-): Promise<{ data: Vote | null; error: string | null }> {
+  participantIP?: string | null
+): Promise<{ data: any | null; error: string | null }> {
   try {
     const { data: trip, error: tripError } = await getTripByCode(tripCode);
     if (tripError) throw new Error(tripError);
     if (!trip) throw new Error('Trip not found');
 
-    // Verify participant exists
-    const { data: participant } = await supabase
-      .from('trip_participants')
-      .select('id')
-      .eq('trip_id', trip.id)
-      .eq('nickname', participantNickname)
-      .single();
-
-    if (!participant) throw new Error('Participant not found');
-
-    // Insert or update vote
+    // INSERT ทุกครั้ง (ไม่ upsert, ไม่ตรวจ token)
     const { data, error } = await supabase
       .from('recommendation_votes')
-      .upsert([
+      .insert([
         {
           trip_id: trip.id,
           recommendation_id: recommendationId,
-          participant_nickname: participantNickname,
+          participant_nickname: participantNickname ?? 'นิรนาม',
           vote_type: voteType,
-          participant_ip: participantIP
+          participant_ip: participantIP ?? null,
+          voter_token: null
         }
       ])
       .select()
@@ -323,20 +319,22 @@ export async function submitVote(
     if (error) throw error;
 
     // Track analytics
-    await trackEvent(trip.id, 'vote_submitted', { 
+    await trackEvent(trip.id, 'vote_submitted', {
       recommendation_id: recommendationId,
-      vote_type: voteType 
+      vote_type: voteType
     });
 
     return { data, error: null };
   } catch (error: any) {
+    console.error('submitVote error:', error);
     return { data: null, error: error.message };
   }
 }
 
-/**
- * Get votes for trip recommendations
- */
+
+
+// -----------------------------------------
+// getVotes เดิมใช้ได้เลย (ไม่มีการกรอง) จะได้สถิติรวมทั้งทริป
 export async function getVotes(tripCode: string): Promise<{ data: Vote[] | null; error: string | null }> {
   try {
     const { data: trip, error: tripError } = await getTripByCode(tripCode);
@@ -345,7 +343,7 @@ export async function getVotes(tripCode: string): Promise<{ data: Vote[] | null;
 
     const { data, error } = await supabase
       .from('recommendation_votes')
-      .select('*')
+      .select('*') // มี voter_token ด้วย
       .eq('trip_id', trip.id);
 
     if (error) throw error;
@@ -355,6 +353,7 @@ export async function getVotes(tripCode: string): Promise<{ data: Vote[] | null;
     return { data: null, error: error.message };
   }
 }
+
 
 /**
  * Generate final trip plan
@@ -884,9 +883,22 @@ function getMockTripPlan(summary: any, recommendations?: any[], votes?: any[]): 
   };
   
 }
-// ในไฟล์ tripService ของคุณ (เพิ่มฟังก์ชันนี้)
+
+/**
+ * Get participants by tripCode (no embed to avoid PGRST201)
+ */
 export async function getParticipants(tripCode: string) {
   try {
+    // 1) Resolve trip_id from trip_code
+    const { data: trip, error: tripErr } = await getTripByCode(tripCode);
+    if (tripErr) {
+      return { data: null, error: tripErr };
+    }
+    if (!trip) {
+      return { data: null, error: 'Trip not found' };
+    }
+
+    // 2) Fetch participants by trip_id directly (no trips!inner)
     const { data, error } = await supabase
       .from('trip_participants')
       .select(`
@@ -898,10 +910,9 @@ export async function getParticipants(tripCode: string) {
         preferred_province,
         travel_styles,
         additional_notes,
-        created_at,
-        trips!inner(trip_code)
+        created_at
       `)
-      .eq('trips.trip_code', tripCode)
+      .eq('trip_id', trip.id)
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -909,20 +920,7 @@ export async function getParticipants(tripCode: string) {
       return { data: null, error: error.message };
     }
 
-    // map ให้ return เฉพาะ participant fields
-    const participants = data.map((item: any) => ({
-      id: item.id,
-      trip_id: item.trip_id,
-      nickname: item.nickname,
-      available_dates: item.available_dates,
-      budget: item.budget,
-      preferred_province: item.preferred_province,
-      travel_styles: item.travel_styles,
-      additional_notes: item.additional_notes,
-      created_at: item.created_at
-    }));
-
-    return { data: participants, error: null };
+    return { data: data ?? [], error: null };
   } catch (error: any) {
     console.error('Error in getParticipants:', error);
     return { data: null, error: error.message };
