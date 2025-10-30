@@ -48,9 +48,24 @@ const TripFormPage = () => {
   ];
 
   const provinces = [
-    'กรุงเทพมหานคร', 'เชียงใหม่', 'เชียงราย', 'ภูเก็ต', 'กระบี่', 
-    'สุราษฎร์ธานี', 'ขอนแก่น', 'นครราชสีมา', 'อุบลราชธานี', 'หาดใหญ่'
-  ];
+  'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร',
+  'ขอนแก่น', 'จันทบุรี', 'ฉะเชิงเทรา', 'ชลบุรี', 'ชัยนาท',
+  'ชัยภูมิ', 'ชุมพร', 'เชียงราย', 'เชียงใหม่', 'ตรัง',
+  'ตราด', 'ตาก', 'นครนายก', 'นครปฐม', 'นครพนม', 
+  'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส',
+  'น่าน', 'บึงกาฬ', 'บุรีรัมย์', 'ปทุมธานี', 'ประจวบคีรีขันธ์',
+  'ปราจีนบุรี', 'ปัตตานี', 'พระนครศรีอยุธยา', 'พะเยา', 'พังงา',
+  'พัทลุง', 'พิจิตร', 'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์',
+  'แพร่', 'ภูเก็ต', 'มหาสารคาม', 'มุกดาหาร', 'แม่ฮ่องสอน',
+  'ยโสธร', 'ยะลา', 'ร้อยเอ็ด', 'ระนอง', 'ระยอง',
+  'ราชบุรี', 'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย',
+  'ศรีสะเกษ', 'สกลนคร', 'สงขลา', 'สตูล', 'สมุทรปราการ',
+  'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว', 'สระบุรี', 'สิงห์บุรี',
+  'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์', 'หนองคาย',
+  'หนองบัวลำภู', 'อ่างทอง', 'อำนาจเจริญ', 'อุดรธานี', 'อุตรดิตถ์',
+  'อุทัยธานี', 'อุบลราชธานี'
+];
+
 
   // Validation for tripCode
   if (!tripCode) {
@@ -201,7 +216,7 @@ const TripFormPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-purple-100">
       {/* Navigation */}
-      <nav className="bg-white shadow-sm">
+      <nav >
         <div className="max-w-2xl mx-auto px-4 py-3">
           <button
             onClick={() => router.back()}
@@ -212,6 +227,7 @@ const TripFormPage = () => {
           </button>
         </div>
       </nav>
+      
 
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
@@ -239,7 +255,7 @@ const TripFormPage = () => {
                 type="text"
                 value={formData.nickname}
                 onChange={(e) => setFormData(prev => ({ ...prev, nickname: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full text-gray-700 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 placeholder="ใส่ชื่อเล่นของคุณ"
                 required
               />
@@ -252,7 +268,7 @@ const TripFormPage = () => {
                 <span>วันที่ว่าง</span>
               </label>
               
-              <div className="border border-gray-300 rounded-lg p-4">
+              <div className="border border-gray-300 rounded-lg p-4 text-gray-600">
                 {/* Calendar Header */}
                 <div className="flex items-center justify-between mb-4">
                   <button
@@ -285,7 +301,7 @@ const TripFormPage = () => {
                   ))}
                 </div>
                 
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-1 ">
                   {renderCalendar()}
                 </div>
 
@@ -317,7 +333,7 @@ const TripFormPage = () => {
                 type="number"
                 value={formData.budget}
                 onChange={(e) => setFormData(prev => ({ ...prev, budget: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="text-gray-700 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 placeholder="ระบุงบประมาณ (บาท)"
                 min="0"
                 required
@@ -333,7 +349,7 @@ const TripFormPage = () => {
               <select
                 value={formData.province}
                 onChange={(e) => setFormData(prev => ({ ...prev, province: e.target.value }))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="text-gray-600 w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 required
               >
                 <option value="">เลือกจังหวัด</option>
