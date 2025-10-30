@@ -93,7 +93,7 @@ const CreateTripPage = () => {
         title: "สร้างทริปสำเร็จ! 🎉",
         html: `รหัสทริปของคุณคือ: <strong>${tripCode}</strong><br>เก็บรหัสนี้ไว้เพื่อแชร์ให้เพื่อนๆ`,
         confirmButtonColor: "#8b5cf6"
-      }).then(() => router.push(`/trip/${tripCode}`));
+      }).then(() => router.push(`/TripFormPage/${tripCode}`));
 
     } catch (error: any) {
       console.error("Create trip error:", error);

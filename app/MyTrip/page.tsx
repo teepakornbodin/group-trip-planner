@@ -13,6 +13,7 @@ import Swal from "sweetalert2";
 interface Trip {
   id: string;
   title: string;
+  trip_code: string;
   created_at: string;
 }
 
@@ -98,7 +99,7 @@ const MyTripsPage = () => {
 
         const { data, error } = await supabase
             .from("trips")
-            .select("id, title, created_at")
+            .select("id, title,trip_code, created_at")
             .eq("creator_id", session.user.id) 
             .order("created_at", { ascending: true });
 
@@ -140,13 +141,13 @@ const MyTripsPage = () => {
         </p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-6">
-          {trips.map((trip, index) => (
+          {trips.map((trip) => (
             <div
               key={trip.id}
               className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition hover:translate-y-[-2px] duration-300 h-full flex flex-col justify-between "
             >
                            
-              <Link href={`/trip/${trip.id}`} className="block">
+              <Link href={`/TripSummaryPage/${trip.trip_code}`} className="block">
                 <h2 className="text-3xl font-semibold text-purple-600 text-center">
                   {trip.title}
                 </h2>
