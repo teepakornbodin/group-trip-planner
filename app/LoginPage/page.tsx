@@ -1,95 +1,133 @@
+//C:\Users\jiras\Documents\group-trip-planner\app\LoginPage\page.tsx
 "use client";
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+import Swal from "sweetalert2";
+import { Eye, EyeOff } from "lucide-react";
 
 const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      const response = await fetch("/api/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-      const data = await response.json();
+    if (error) {
+      let message = error.message;
 
-      if (response.ok) {
-        alert(data.message);
-        router.push("/"); // Login สำเร็จ ให้ย้ายไปหน้า Home
-      } else {
-        alert(data.message);
+      // parse email not confirmed
+      if (message.includes("Email not confirmed")) {
+        Swal.fire({
+          icon: "info",
+          title: "บัญชีของคุณยังไม่ได้ยืนยันอีเมล",
+          html: `เราได้ส่งอีเมลไปที่ <strong>${email}</strong> โปรดเปิดอีเมลเพื่อยืนยันก่อนเข้าสู่ระบบ.<br><br>
+                 หากไม่ได้รับอีเมล สามารถส่งใหม่ได้`,
+          showCancelButton: true,
+          confirmButtonText: "ส่งอีเมลยืนยันอีกครั้ง",
+          cancelButtonText: "ปิด",
+        }).then(async (result) => {
+          if (result.isConfirmed) {
+            const { error: resendError } = await supabase.auth.resend({
+              type: "signup",
+              email,
+            });
+
+            if (resendError) {
+              Swal.fire({
+                icon: "error",
+                title: "ไม่สามารถส่งอีเมลยืนยันได้",
+                text: resendError.message,
+              });
+            } else {
+              Swal.fire({
+                icon: "success",
+                title: "ส่งอีเมลยืนยันเรียบร้อย",
+                text: "โปรดตรวจสอบกล่องจดหมายของคุณ",
+              });
+            }
+          }
+        });
+        return;
       }
-    } catch (error) {
-      alert("Login failed. Please try again.");
+
+      // parse login failed
+      if (message.includes("Invalid login credentials")) {
+        message = "อีเมลหรือรหัสผ่านไม่ถูกต้อง";
+      }
+
+      Swal.fire({
+        icon: "error",
+        title: "Login failed",
+        text: message,
+      });
+      return;
     }
+
+    // login สำเร็จ
+    Swal.fire({
+      icon: "success",
+      title: "Login สำเร็จ!",
+      timer: 1500,
+      showConfirmButton: false,
+    }).then(() => router.push("/"));
   };
 
   return (
     <div className="flex justify-center items-center h-screen bg-gradient-to-br from-purple-50 to-purple-100">
-      <main className="max-w-2xl mx-auto px-4 py-16">
-        <div className="bg-white rounded-2xl shadow-xl min-w-sm overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-8 text-center">
-            <h1 className="text-3xl font-bold mb-2">Login</h1>
+      <main className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
+        <h1 className="text-3xl font-bold text-center mb-6 text-purple-600">เข้าสู่ระบบ</h1>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="email" className="block text-gray-700 mb-1">อีเมล</label>
+            <input
+              type="email"
+              id="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="อีเมลของคุณ"
+              required
+              className="w-full px-3 py-2 border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-gray-600 placeholder-gray-400"
+            />
           </div>
 
-          {/* Content */}
-          <div className="p-8">
-            <form onSubmit={handleSubmit}>
-              <div className="mb-4">
-                <label
-                  className="block text-gray-700 text-sm font-bold mb-2"
-                  htmlFor="email"
-                >
-                  Email
-                </label>
-                <input
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  id="email"
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="mb-6">
-                <label
-                  className="block text-gray-700 text-sm font-bold mb-2"
-                  htmlFor="password"
-                >
-                  Password
-                </label>
-                <input
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
-                  id="password"
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <button
-                  className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-                  type="submit"
-                >
-                  Sign In
-                </button>
-              </div>
-            </form>
+          <label htmlFor="password" className="block text-gray-700 mb-1">รหัสผ่าน</label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              id="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="รหัสผ่านของคุณ"
+              required
+              className="w-full px-3 py-2 border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 pr-10 text-gray-600 placeholder-gray-400"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
           </div>
-        </div>
+
+          <button
+            type="submit"
+            className="w-full bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg font-semibold transition-colors"
+          >
+            เข้าสู่ระบบ
+          </button>
+          <div className="text-center mt-2">
+            <a href="/ForgetPasswordPage" className="text-purple-600 hover:underline text-sm">
+              ลืมรหัสผ่าน?
+            </a>
+          </div>
+        </form>
       </main>
     </div>
   );
