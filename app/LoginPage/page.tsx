@@ -1,9 +1,14 @@
-//C:\Users\jiras\Documents\group-trip-planner\app\LoginPage\page.tsx
+// app/login/page.tsx
+
 "use client";
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+// ❌ ลบ: import { supabase } from "@/lib/supabaseClient";
+
+// ✅ เพิ่ม: ใช้ createClientComponentClient สำหรับ Client Component Auth
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"; 
+
 import Swal from "sweetalert2";
 import { Eye, EyeOff } from "lucide-react";
 
@@ -12,6 +17,9 @@ const LoginPage = () => {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
+
+  // 💡 แก้ไข: สร้าง Client ที่ผูกกับ Auth Helpers
+  const supabase = createClientComponentClient(); 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +35,7 @@ const LoginPage = () => {
           icon: "info",
           title: "บัญชีของคุณยังไม่ได้ยืนยันอีเมล",
           html: `เราได้ส่งอีเมลไปที่ <strong>${email}</strong> โปรดเปิดอีเมลเพื่อยืนยันก่อนเข้าสู่ระบบ.<br><br>
-                 หากไม่ได้รับอีเมล สามารถส่งใหม่ได้`,
+                 หากไม่ได้รับอีเมล สามารถส่งใหม่ได้`,
           showCancelButton: true,
           confirmButtonText: "ส่งอีเมลยืนยันอีกครั้ง",
           cancelButtonText: "ปิด",
