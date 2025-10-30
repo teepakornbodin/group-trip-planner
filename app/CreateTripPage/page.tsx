@@ -2,93 +2,87 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import Swal from "sweetalert2";
 
 const CreateTripPage = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [username, setUsername] = useState("");
   const [tripTitle, setTripTitle] = useState("");
   const router = useRouter();
+  const supabase = createClientComponentClient();
 
   useEffect(() => {
-    checkAuth();
-  }, []);
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
 
-  const checkAuth = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // ถ้ายังไม่ได้ login ให้แสดง popup แล้ว redirect ไปหน้า login
+        if (!session?.user) {
+          Swal.fire({
+            icon: "warning",
+            title: "กรุณาเข้าสู่ระบบ",
+            confirmButtonColor: "#8b5cf6"
+          }).then(() => router.push("/LoginPage"));
+          return;
+        }
+
+        // ดึง profile
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", session.user.id)
+          .single();
+
+        setUsername(profile?.username || session.user.email || "");
+      } catch (error) {
+        console.error("Auth check error:", error);
         Swal.fire({
-          icon: "warning",
-          title: "กรุณาเข้าสู่ระบบ",
-          text: "คุณต้องเข้าสู่ระบบก่อนสร้างทริป",
-          confirmButtonText: "ไปหน้าเข้าสู่ระบบ",
-          confirmButtonColor: "#8b5cf6"
-        }).then(() => {
-          router.push("/LoginPage");
+          icon: "error",
+          title: "เกิดข้อผิดพลาด",
+          text: "ไม่สามารถตรวจสอบสถานะการเข้าสู่ระบบได้"
         });
-        return;
+      } finally {
+        setIsLoading(false);
       }
+    };
 
-      // ดึงข้อมูล profile ของผู้ใช้
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("id", session.user.id)
-        .single();
-
-      if (profile) {
-        setUsername(profile.username);
-        setIsAuthenticated(true);
-      }
-    } catch (error) {
-      console.error("Auth check error:", error);
-      Swal.fire({
-        icon: "error",
-        title: "เกิดข้อผิดพลาด",
-        text: "ไม่สามารถตรวจสอบสถานะการเข้าสู่ระบบได้"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    checkAuth();
+  }, [router, supabase]);
 
   const handleCreateTrip = async (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!tripTitle.trim()) {
-      Swal.fire({
-        icon: "warning",
-        title: "กรุณาใส่ชื่อทริป"
-      });
-      return;
+      return Swal.fire({ icon: "warning", title: "กรุณาใส่ชื่อทริป" });
     }
 
+    setIsLoading(true);
+
     try {
-      // สร้าง trip code แบบสุ่ม (6 ตัวอักษร)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) throw new Error("กรุณาเข้าสู่ระบบ");
+
+      // สร้าง profile ถ้ายังไม่มี
+      await supabase.from("profiles").upsert({
+        id: session.user.id,
+        username: username || session.user.email
+      });
+
+      // สร้าง trip code แบบสุ่ม
       const tripCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-      const { data: session } = await supabase.auth.getSession();
-      
-      // บันทึกข้อมูลทริปลงฐานข้อมูล
-      const { data, error } = await supabase
+      // Insert trip พร้อม creator_id
+      const { error } = await supabase
         .from("trips")
-        .insert([
-          {
-            trip_code: tripCode,
-            title: tripTitle,
-            status: "planning",
-            max_participants: 10,
-            ai_processing_complete: false,
-            voting_complete: false,
-            plan_generated: false,
-            creator_ip: null // หรือเก็บ IP ถ้าต้องการ
-          }
-        ])
+        .insert([{
+          trip_code: tripCode,
+          title: tripTitle,
+          status: "planning",
+          max_participants: 10,
+          creator_id: session.user.id,
+          ai_processing_complete: false,
+          voting_complete: false,
+          plan_generated: false
+        }])
         .select()
         .single();
 
@@ -99,9 +93,7 @@ const CreateTripPage = () => {
         title: "สร้างทริปสำเร็จ! 🎉",
         html: `รหัสทริปของคุณคือ: <strong>${tripCode}</strong><br>เก็บรหัสนี้ไว้เพื่อแชร์ให้เพื่อนๆ`,
         confirmButtonColor: "#8b5cf6"
-      }).then(() => {
-        router.push(`/trip/${tripCode}`);
-      });
+      }).then(() => router.push(`/trip/${tripCode}`));
 
     } catch (error: any) {
       console.error("Create trip error:", error);
@@ -110,10 +102,11 @@ const CreateTripPage = () => {
         title: "เกิดข้อผิดพลาด",
         text: error.message || "ไม่สามารถสร้างทริปได้"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // แสดง loading ขณะตรวจสอบ auth
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen bg-gradient-to-br from-purple-50 to-purple-100">
@@ -123,11 +116,6 @@ const CreateTripPage = () => {
         </div>
       </div>
     );
-  }
-
-  // ถ้ายังไม่ได้ auth จะไม่แสดงฟอร์ม
-  if (!isAuthenticated) {
-    return null;
   }
 
   return (

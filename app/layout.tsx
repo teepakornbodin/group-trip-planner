@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import NavBar from "../components/NavBar.tsx";
+import SupabaseProvider from "./SupabaseProvider"; // ✅ import
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,11 +29,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* ✅ NavBar แสดงบนทุกหน้า */}
-        <NavBar />   
-        
-        {/* ✅ เนื้อหาของแต่ละหน้า */}
-        <main>{children}</main>
+        {/* ✅ ห่อทุกหน้าไว้ใน SupabaseProvider */}
+        <SupabaseProvider>
+          <NavBar />
+          <main>{children}</main>
+        </SupabaseProvider>
       </body>
     </html>
   );

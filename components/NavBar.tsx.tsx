@@ -3,59 +3,68 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 interface UserProfile {
-  email?: string;
-  username?: string;
-  avatar_url?: string;
+  email?: string;
+  username?: string;
+  avatar_url?: string;
 }
 
 const NavBar = () => {
-  const pathname = usePathname();
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // 💡 แก้ไข: สร้าง Client ที่ถูกต้อง
+  const supabase = createClientComponentClient(); 
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
+  useEffect(() => {
+    const fetchUser = async () => {
+      setLoading(true);
+      
+      // ใช้ client ที่สร้างขึ้นใหม่
+      const { data: { session } } = await supabase.auth.getSession(); 
 
-      if (session?.user) {
-        // fetch profile from profiles table
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username, avatar_url")
-          .eq("id", session.user.id)
-          .single();
+      if (session?.user) {
+        // fetch profile from profiles table
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username, avatar_url")
+          .eq("id", session.user.id)
+          .single();
 
-        setUser({
-          email: session.user.email || undefined,
-          username: profile?.username || "User",
-          avatar_url: profile?.avatar_url || "/default-avatar.png",
-        });
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    };
+        setUser({
+          email: session.user.email || undefined,
+          username: profile?.username || "User",
+          avatar_url: profile?.avatar_url || "/default-avatar.png",
+        });
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
 
-    fetchUser();
+    fetchUser();
 
-    // listen to auth state changes
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      fetchUser();
-    });
+    // listen to auth state changes
+    // ใช้ client ที่สร้างขึ้นใหม่
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { 
+      fetchUser();
+    });
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
-  }, []);
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+    
+    // 💡 เพิ่ม supabase ใน dependency array เพื่อให้ useEffect รู้จัก client ใหม่
+  }, [supabase]); 
+  
+  // Note: ถ้าคุณไม่ชอบ Warning เรื่อง dependency array สามารถเอา [supabase] ออกได้ เนื่องจาก client จะถูกสร้างแค่ครั้งเดียว
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-  };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
 
   return (
     <nav className="bg-white px-4 py-3 shadow-sm">
