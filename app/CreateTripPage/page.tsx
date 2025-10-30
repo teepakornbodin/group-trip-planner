@@ -11,8 +11,8 @@ import {
   Check,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useTrip } from "@/hooks/useTrip"; // 👈 import hook
-import { QRCodeCanvas } from "qrcode.react"; // 👈 เพิ่มบรรทัดนี้
+import { useTrip } from "@/hooks/useTrip"; // 
+import { QRCodeCanvas } from "qrcode.react"; // 
 
 const CreateTripPage = () => {
   const router = useRouter();
@@ -92,7 +92,7 @@ const CreateTripPage = () => {
                 {copied ? "Copied!" : "Copy Link"}
               </button>
               <button
-                onClick={() => router.push(`/TripFormPage`)}
+                onClick={() => router.push(`/TripFormPage/${trip.trip_code}`)}
                 className="border border-purple-500 text-purple-600 hover:bg-purple-50 px-6 py-3 rounded-lg font-semibold transition-colors"
               >
                 Go to Form
