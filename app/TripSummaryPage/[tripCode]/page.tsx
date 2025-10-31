@@ -20,7 +20,7 @@ import {
 import { useTrip } from "../../../hooks/useTrip";
 import { useParticipants } from "../../../hooks/useParticipants";
 import FinalTripPlanView, { Plan } from "@/components/FinalTripPlanView";
-
+import { generateTripPlanPDF } from '@/utils/generatePDF';
 type VoteItem = {
   id: string;
   recommendation_id: string;
@@ -74,6 +74,7 @@ const TripSummaryPage = () => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<"สรุป" | "โหวต" | "Plan">("สรุป");
   const [shareUrl, setShareUrl] = useState("");
+  const [downloadingPDF, setDownloadingPDF] = useState(false);
 
   // ===== โหลดข้อมูลหลัก =====
   useEffect(() => {
@@ -103,44 +104,121 @@ const TripSummaryPage = () => {
   };
 
   // ===== สร้างแผนจาก backend =====
-  const handleGeneratePlan = async () => {
-    if (!tripCode || !canGeneratePlan) return;
+  useEffect(() => {
+  if (!tripCode || activeTab !== "Plan") return;
+  
+  const loadExistingPlan = async () => {
     try {
-      setPlanError(null);
-      setCreatingPlan(true);
-      setFinalPlan(null);
-
-      // 1) สร้าง snapshot (เก็บหลังบ้าน)
-      const snapshotRes = await fetch(`/api/trips/${tripCode}/ai/snapshot`, {
-        method: "POST",
-      });
-      const snapshotData = await snapshotRes.json();
-      if (!snapshotRes.ok || !snapshotData?.success) {
-        throw new Error(snapshotData?.error || "สร้าง snapshot ไม่สำเร็จ");
+      const res = await fetch(`/api/trips/${tripCode}/plan`);
+      const data = await res.json();
+      
+      if (res.ok && data?.success && data?.data) {
+        setFinalPlan(data.data);
+        console.log('Loaded existing plan:', data.fromCache ? 'from cache' : 'generated');
       }
-
-      // 2) ขอแผนจาก AI
-      const planRes = await fetch(`/api/trips/${tripCode}/plan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const planData = await planRes.json();
-      if (!planRes.ok || !planData?.success) {
-        throw new Error(planData?.error || "Failed to generate plan data");
-      }
-
-      setFinalPlan(planData.data as Plan);
-    } catch (err: any) {
-      setPlanError(err.message || "An error occurred");
-    } finally {
-      setCreatingPlan(false);
+    } catch (error) {
+      console.log('No existing plan found');
     }
   };
+  
+  loadExistingPlan();
+}, [tripCode, activeTab]);
 
+// แก้ไข handleGeneratePlan
+const handleGeneratePlan = async (forceNew = false) => {
+  if (!tripCode || (!canGeneratePlan && !forceNew)) return;
+  
+  try {
+    setPlanError(null);
+    setCreatingPlan(true);
+    setFinalPlan(null);
+
+    // 1) สร้าง snapshot (เก็บหลังบ้าน)
+    const snapshotRes = await fetch(`/api/trips/${tripCode}/ai/snapshot`, {
+      method: "POST",
+    });
+    const snapshotData = await snapshotRes.json();
+    if (!snapshotRes.ok || !snapshotData?.success) {
+      throw new Error(snapshotData?.error || "สร้าง snapshot ไม่สำเร็จ");
+    }
+
+    // 2) ขอแผนจาก AI (ส่ง forceNew ไปด้วย)
+    const planRes = await fetch(`/api/trips/${tripCode}/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ forceNew }), // เพิ่มตรงนี้
+    });
+    const planData = await planRes.json();
+    if (!planRes.ok || !planData?.success) {
+      throw new Error(planData?.error || "Failed to generate plan data");
+    }
+
+    setFinalPlan(planData.data as Plan);
+    
+    // แจ้งเตือนว่าเป็น Plan เก่าหรือใหม่
+    if (planData.fromCache && !forceNew) {
+      console.log('ใช้แผนที่มีอยู่แล้ว');
+    } else {
+      console.log('สร้างแผนใหม่สำเร็จ');
+    }
+  } catch (err: any) {
+    setPlanError(err.message || "An error occurred");
+  } finally {
+    setCreatingPlan(false);
+  }
+};
+
+  // ใน TripSummaryPage
   const handleDownloadPDF = () => {
-    alert("กำลังดาวน์โหลด PDF...");
-  };
+  // เก็บ active tab ปัจจุบัน
+  const currentTab = activeTab;
+  
+  // เพิ่ม class สำหรับ print
+  const element = document.getElementById(
+    currentTab === "สรุป" ? 'summary-tab-content' :
+    currentTab === "Plan" ? 'plan-tab-content' :
+    'vote-tab-content'
+  );
+  
+  if (!element) {
+    alert('ไม่พบเนื้อหาที่จะดาวน์โหลด');
+    return;
+  }
+  
+  // เพิ่ม print styles
+  const style = document.createElement('style');
+  style.innerHTML = `
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #${element.id}, #${element.id} * {
+        visibility: visible;
+      }
+      #${element.id} {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+      /* ซ่อนปุ่ม */
+      button {
+        display: none !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  // เปิด print dialog
+  window.print();
+  
+  // ลบ style หลัง print
+  setTimeout(() => {
+    document.head.removeChild(style);
+  }, 1000);
+};
 
+/////////////////////////////
   const handleRecommendation = () => {
     if (tripCode) router.push(`/RecommendationPage/${tripCode}`);
   };
@@ -339,6 +417,7 @@ const TripSummaryPage = () => {
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
+        <div id="trip-summary-content">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-xl overflow-hidden mb-6">
           <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-6">
@@ -424,7 +503,7 @@ const TripSummaryPage = () => {
         <div className="bg-white rounded-b-2xl shadow-xl p-6">
           {/* ========== TAB: สรุป ========== */}
           {activeTab === "สรุป" && (
-            <div>
+            <div id="summary-tab-content">
               {participants && participants.length > 0 ? (
                 <>
                   {/* Quick Stats */}
@@ -580,27 +659,41 @@ const TripSummaryPage = () => {
               )}
 
               {/* Action Buttons */}
-              {participants && participants.length > 0 && (
-                <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
-                  <button
-                    onClick={handleDownloadPDF}
-                    className="flex items-center justify-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                  >
-                    <Download className="w-5 h-5" />
-                    <span>ดาวน์โหลด PDF</span>
-                  </button>
+      {participants && participants.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-4 pt-6 border-t border-gray-200">
+          <button
+            onClick={handleDownloadPDF}
+            disabled={downloadingPDF}
+            className={`flex items-center justify-center space-x-2 px-6 py-3 rounded-lg font-medium transition-colors ${
+              downloadingPDF
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-gray-600 hover:bg-gray-700'
+            } text-white`}
+          >
+            {downloadingPDF ? (
+              <>
+                <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"></div>
+                <span>กำลังสร้าง PDF...</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-5 h-5" />
+                <span>ดาวน์โหลด PDF</span>
+              </>
+            )}
+          </button>
 
-                  <button
-                    onClick={handleRecommendation}
-                    className="flex items-center justify-center space-x-2 bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1"
-                  >
-                    <Bot className="w-5 h-5" />
-                    <span>ให้ AI แนะนำสถานที่</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+          <button
+            onClick={handleRecommendation}
+            className="flex items-center justify-center space-x-2 bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-lg font-medium transition-colors flex-1"
+          >
+            <Bot className="w-5 h-5" />
+            <span>ให้ AI แนะนำสถานที่</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )}
 
           {/* ========== TAB: โหวต ========== */}
           {activeTab === "โหวต" && (
@@ -621,6 +714,7 @@ const TripSummaryPage = () => {
 
           {/* ========== TAB: Plan ========== */}
           {activeTab === "Plan" && (
+            <div id="plan-tab-content">
             <div className="py-8">
               {!finalPlan && !creatingPlan && (
                 <div className="text-center py-12">
@@ -629,49 +723,33 @@ const TripSummaryPage = () => {
                     แผนการเดินทางจะปรากฏที่นี่
                   </h2>
                   <p className="text-gray-600 mb-2">
-                    เมื่อ้เสร็จสิ้นการโหวตสถานที่แล้ว AI จะสร้างแผนการเดินทางที่สมบูรณ์ให้
+                    เมื่อเสร็จสิ้นการโหวตสถานที่แล้ว AI จะสร้างแผนการเดินทางที่สมบูรณ์ให้
                   </p>
 
-                  <p className="text-gray-700 mb-6">
-                    ผู้ที่เข้ามาโหวตแล้ว: <span className="font-semibold">{uniqueVotersCount}</span> คน
-                    <span className="text-gray-500"> (ต้องอย่างน้อย 2 คน)</span>
-                  </p>
 
                   <div className="flex items-center justify-center gap-3 mt-4">
-                    <button
-                      onClick={handleGeneratePlan}
-                      disabled={!canGeneratePlan}
-                      className={`px-8 py-3 rounded-lg font-semibold transition-colors
-                      ${
-                        canGeneratePlan
-                          ? "bg-purple-500 hover:bg-purple-600 text-white"
-                          : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                      }`}
-                    >
-                      สร้างแผนการเดินทาง
-                    </button>
+      <button
+        onClick={() => handleGeneratePlan(false)}
+        disabled={!canGeneratePlan}
+        className={`px-8 py-3 rounded-lg font-semibold transition-colors
+        ${
+          canGeneratePlan
+            ? "bg-purple-500 hover:bg-purple-600 text-white"
+            : "bg-gray-200 text-gray-500 cursor-not-allowed"
+        }`}
+      >
+        สร้างแผนการเดินทาง
+      </button>
 
-                    <button
-                      onClick={() => tripCode && fetchVotesFull(tripCode)}
-                      className="px-8 py-3 rounded-lg font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700"
-                    >
-                      รีเฟรชผลโหวต
-                    </button>
-                  </div>
-
-                  {!canGeneratePlan && (
-                    <p className="text-sm text-gray-500 mt-3">
-                      ต้องมีคนเข้ามาโหวตอย่างน้อย 2 คนก่อน จึงจะเริ่มสร้างแผนได้
-                    </p>
-                  )}
-
-                  {planError && (
-                    <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-lg">
-                      <p>เกิดข้อผิดพลาด: {planError}</p>
-                    </div>
-                  )}
-                </div>
-              )}
+      <button
+        onClick={() => tripCode && fetchVotesFull(tripCode)}
+        className="px-8 py-3 rounded-lg font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700"
+      >
+        รีเฟรชผลโหวต
+      </button>
+    </div>
+  </div>
+)}
 
               {creatingPlan && (
                 <div className="p-6 bg-white rounded-xl flex flex-col items-center justify-center">
@@ -682,13 +760,29 @@ const TripSummaryPage = () => {
               )}
 
               {finalPlan && (
-                <FinalTripPlanView
-                  plan={finalPlan}
-                  onDownload={handleDownloadPDF}
-                />
-              )}
+  <div>
+    {/* เพิ่มปุ่มสร้างแผนใหม่ */}
+    <div className="flex justify-end gap-2 mb-4">
+      <button
+        onClick={() => handleGeneratePlan(true)}
+        disabled={creatingPlan}
+        className="px-4 py-2 rounded-lg font-medium bg-orange-500 hover:bg-orange-600 text-white transition-colors"
+      >
+        สร้างแผนใหม่
+      </button>
+    </div>
+    
+    <FinalTripPlanView
+      plan={finalPlan}
+      onDownload={handleDownloadPDF}
+      downloading={downloadingPDF}
+    />
+  </div>
+)}
+            </div>
             </div>
           )}
+        </div>
         </div>
       </main>
     </div>

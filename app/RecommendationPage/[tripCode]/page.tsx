@@ -360,7 +360,6 @@ const AIRecommendationPage = () => {
               <div className="mb-4">
                 <p className="text-green-600 mb-2 flex items-center justify-center">
                   <Check className="w-5 h-5 inline mr-2" />
-                  โหวตครบทุกรายการแล้ว!
                 </p>
               </div>
             )}

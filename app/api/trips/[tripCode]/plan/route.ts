@@ -50,9 +50,119 @@ Rules:
 - Budget should match constraints (max budget per person × group size)
 `;
 
+// เพิ่ม GET endpoint สำหรับดึง Plan ที่มีอยู่แล้ว
+export async function GET(_req: Request, ctx: Params) {
+  try {
+    const { tripCode } = await ctx.params;
+
+    // หา trip_id จาก trip_code
+    const { data: tripData, error: tripErr } = await supabase
+      .from("trips")
+      .select("id")
+      .eq("trip_code", tripCode)
+      .single();
+
+    if (tripErr || !tripData) {
+      return NextResponse.json(
+        { success: false, error: "ไม่พบทริปนี้" },
+        { status: 404 }
+      );
+    }
+
+    // ดึง plan ล่าสุดของทริปนี้
+    const { data: planData, error: planErr } = await supabase
+      .from("trip_plans")
+      .select("*")
+      .eq("trip_id", tripData.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (planErr || !planData) {
+      return NextResponse.json(
+        { success: false, error: "ยังไม่มีแผนการเดินทาง", exists: false },
+        { status: 404 }
+      );
+    }
+
+    // แปลงข้อมูลจาก DB เป็น format ที่ frontend ต้องการ
+    const plan = {
+      title: planData.plan_title,
+      dates: planData.dates || null,
+      participants: planData.participants || null,
+      totalBudget: planData.total_budget,
+      overview: planData.overview || {},
+      itinerary: planData.itinerary || [],
+      budgetBreakdown: planData.budget_breakdown || {},
+      tips: planData.travel_tips || [],
+    };
+
+    return NextResponse.json({
+      success: true,
+      exists: true,
+      data: plan,
+      createdAt: planData.created_at,
+    });
+  } catch (err: any) {
+    console.error("Get plan error:", err);
+    return NextResponse.json(
+      { success: false, error: err?.message || "Unexpected error" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(_req: Request, ctx: Params) {
   try {
     const { tripCode } = await ctx.params;
+    const body = await _req.json().catch(() => ({}));
+    const forceNew = body?.forceNew === true; // เพิ่ม option สำหรับบังคับสร้างใหม่
+
+    // หา trip_id จาก trip_code
+    const { data: tripData, error: tripErr } = await supabase
+      .from("trips")
+      .select("id")
+      .eq("trip_code", tripCode)
+      .single();
+
+    if (tripErr || !tripData) {
+      return NextResponse.json(
+        { success: false, error: "ไม่พบทริปนี้" },
+        { status: 404 }
+      );
+    }
+
+    // ✅ เช็คว่ามี Plan เก่าอยู่แล้วหรือไม่ (ถ้าไม่ได้บังคับสร้างใหม่)
+    if (!forceNew) {
+      const { data: existingPlan } = await supabase
+        .from("trip_plans")
+        .select("*")
+        .eq("trip_id", tripData.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (existingPlan) {
+        // มี Plan เก่าอยู่แล้ว ส่งกลับไปเลย
+        const plan = {
+          title: existingPlan.plan_title,
+          dates: existingPlan.dates || null,
+          participants: existingPlan.participants || null,
+          totalBudget: existingPlan.total_budget,
+          overview: existingPlan.overview || {},
+          itinerary: existingPlan.itinerary || [],
+          budgetBreakdown: existingPlan.budget_breakdown || {},
+          tips: existingPlan.travel_tips || [],
+        };
+
+        return NextResponse.json({
+          success: true,
+          data: plan,
+          fromCache: true,
+          createdAt: existingPlan.created_at,
+        });
+      }
+    }
 
     // 1) ดึง snapshot ล่าสุดของ trip นี้
     const { data: rows, error: qerr } = await supabase
@@ -76,15 +186,20 @@ export async function POST(_req: Request, ctx: Params) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.warn("GEMINI_API_KEY not set. Returning mock plan.");
+      const mockPlan = mockPlanFromSnapshot(payload);
+      
+      // บันทึก mock plan ลง DB
+      await savePlanToDatabase(tripData.id, mockPlan, "mock");
+      
       return NextResponse.json({
         success: true,
-        data: mockPlanFromSnapshot(payload),
+        data: mockPlan,
+        fromCache: false,
         meta: { note: "GEMINI_API_KEY not set. Returned mock plan." },
       });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    // ใช้ gemini-2.0-flash-exp หรือ gemini-1.5-flash ตามที่มี
     const model = genAI.getGenerativeModel({
       model: "gemini-2.0-flash-exp",
       systemInstruction: SYSTEM_INSTRUCTION,
@@ -115,14 +230,12 @@ SNAPSHOT DATA:
 ${JSON.stringify(payload, null, 2)}
 `;
 
-    // ✅ วิธีที่ถูกต้องในการเรียก generateContent
     const result = await model.generateContent(userPrompt);
     const text = result.response.text().trim();
 
     // 3) พยายาม parse JSON ที่ Gemini ส่งมา
     let planJson: any = null;
     try {
-      // ลบ markdown code block ถ้ามี
       let cleaned = text;
       if (text.includes("```")) {
         cleaned = text
@@ -133,10 +246,15 @@ ${JSON.stringify(payload, null, 2)}
       planJson = JSON.parse(cleaned);
     } catch (parseErr) {
       console.error("Failed to parse LLM response:", text);
-      // ถ้า parse ไม่ได้ → fallback mock + แนบ raw
+      const mockPlan = mockPlanFromSnapshot(payload);
+      
+      // บันทึก mock plan ลง DB
+      await savePlanToDatabase(tripData.id, mockPlan, "mock-fallback");
+      
       return NextResponse.json({
         success: true,
-        data: mockPlanFromSnapshot(payload),
+        data: mockPlan,
+        fromCache: false,
         meta: {
           note: "LLM JSON parse failed. Returned mock plan.",
           raw: text.substring(0, 500),
@@ -144,43 +262,44 @@ ${JSON.stringify(payload, null, 2)}
       });
     }
 
-    // 4) (ออปชัน) บันทึกลงตาราง trip_plans
-    try {
-      // ค้นหา trip_id จาก trip_code ก่อน
-      const { data: tripData } = await supabase
-        .from("trips")
-        .select("id")
-        .eq("trip_code", tripCode)
-        .single();
+    // 4) บันทึกลงตาราง trip_plans
+    await savePlanToDatabase(tripData.id, planJson, "gemini");
 
-      if (tripData?.id) {
-        await supabase
-          .from("trip_plans")
-          .insert({
-            trip_id: tripData.id,
-            plan_title: planJson?.title ?? "แผนการเดินทาง",
-            itinerary: planJson?.itinerary ?? [],
-            overview: planJson?.overview ?? {},
-            budget_breakdown: planJson?.budgetBreakdown ?? {},
-            travel_tips: planJson?.tips ?? [],
-            total_budget: planJson?.totalBudget ?? null,
-            generated_by: "gemini",
-          })
-          .select()
-          .single();
-      }
-    } catch (insertErr) {
-      console.warn("Failed to save plan to DB:", insertErr);
-      // ไม่ throw error เพราะแผนยังใช้งานได้
-    }
-
-    return NextResponse.json({ success: true, data: planJson });
+    return NextResponse.json({
+      success: true,
+      data: planJson,
+      fromCache: false,
+    });
   } catch (err: any) {
     console.error("Plan generation error:", err);
     return NextResponse.json(
       { success: false, error: err?.message || "Unexpected error" },
       { status: 500 }
     );
+  }
+}
+
+// Helper function สำหรับบันทึก Plan
+async function savePlanToDatabase(tripId: number, planData: any, generatedBy: string) {
+  try {
+    await supabase
+      .from("trip_plans")
+      .insert({
+        trip_id: tripId,
+        plan_title: planData?.title ?? "แผนการเดินทาง",
+        dates: planData?.dates ?? null,
+        participants: planData?.participants ?? null,
+        itinerary: planData?.itinerary ?? [],
+        overview: planData?.overview ?? {},
+        budget_breakdown: planData?.budgetBreakdown ?? {},
+        travel_tips: planData?.tips ?? [],
+        total_budget: planData?.totalBudget ?? null,
+        generated_by: generatedBy,
+      })
+      .select()
+      .single();
+  } catch (insertErr) {
+    console.warn("Failed to save plan to DB:", insertErr);
   }
 }
 

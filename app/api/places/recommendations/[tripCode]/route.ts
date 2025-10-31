@@ -154,7 +154,7 @@ async function searchPlacesNearby(lat: number, lng: number, type: string, apiKey
   }
 }
 
-// เพิ่มฟังก์ชั่นใหม่: ค้นหาที่พักใกล้เคียง
+// ฟังก์ชั่นใหม่  ค้นหาที่พักใกล้เคียง
 async function searchNearbyAccommodations(lat: number, lng: number, apiKey: string): Promise<any[]> {
   try {
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=5000&type=lodging&language=th&key=${apiKey}`;
@@ -168,7 +168,7 @@ async function searchNearbyAccommodations(lat: number, lng: number, apiKey: stri
   }
 }
 
-// เพิ่มฟังก์ชั่นใหม่: ค้นหาร้านอาหารใกล้เคียง
+// ฟังก์ชั่น ค้นหาร้านอาหารใกล้เคียง
 async function searchNearbyRestaurants(lat: number, lng: number, apiKey: string): Promise<any[]> {
   try {
     const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=3000&type=restaurant&language=th&key=${apiKey}`;
