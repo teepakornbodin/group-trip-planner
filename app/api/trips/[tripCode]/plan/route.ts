@@ -132,7 +132,7 @@ export async function POST(_req: Request, ctx: Params) {
       );
     }
 
-    // ✅ เช็คว่ามี Plan เก่าอยู่แล้วหรือไม่ (ถ้าไม่ได้บังคับสร้างใหม่)
+    //  เช็คว่ามี Plan เก่าอยู่แล้วหรือไม่ (ถ้าไม่ได้บังคับสร้างใหม่)
     if (!forceNew) {
       const { data: existingPlan } = await supabase
         .from("trip_plans")

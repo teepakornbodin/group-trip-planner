@@ -30,7 +30,7 @@ export async function GET(
       trip: data
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching trip:', error);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
